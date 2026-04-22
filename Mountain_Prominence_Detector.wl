@@ -1,1 +1,95 @@
-ProcessMountains[location_, radius_Quantity : Quantity[20, "Kilometers"], peakRadius_ : 8, minHeight_ : 3000] := Module[{geoData, elevationMatrix, dim, maxFiltered, positions, pointData, lines3D, spheres3D, pointMax, offset},(*1. Fetch Elevation Data*)geoData = GeoElevationData[location, GeoRange -> radius, UnitSystem -> "Metric"];(*2. Convert to Numerical Matrix& Fix Dimensionality (The Reverse Fix)*)elevationMatrix = QuantityMagnitude[geoData];If[ArrayDepth[elevationMatrix] > 2, elevationMatrix = First[elevationMatrix]];elevationMatrix = Reverse[elevationMatrix];(*3. Define Plotting Parameters*)dim = Dimensions[elevationMatrix];pointMax = Max[elevationMatrix];(*Needle height:15% of the total elevation range*)offset = pointMax*0.15;(*4. Spatial Filter Logic (MaxFilter)*)(*This finds points that are the highest within a specific pixel radius*)maxFiltered = MaxFilter[elevationMatrix, peakRadius];(*Identify where the original height matches the filtered max height*)positions = Position[elevationMatrix - maxFiltered, 0.];(*5. Generate Marker Data with Height Thresholding*)pointData = Table[Module[{h = elevationMatrix[[Sequence @@ pos]]}, If[h >= minHeight,(*Output:{Height,BasePoint, TopPoint}*){h, {pos[[2]], pos[[1]], h}, {pos[[2]], pos[[1]], h + offset}}, Nothing]], {pos, positions}];(*6. Create 3D Graphic Elements (Needles& Spheres)*)lines3D = Table[{Thickness[0.003], Red, Line[{d[[2]], d[[3]]}]}, {d, pointData}];spheres3D = Table[{Red, Sphere[d[[3]], Max[dim]/100]}, {d, pointData}];(*7. Final Output Packaging*)<| "Map" -> Show[ListPlot3D[elevationMatrix, Mesh -> None, ColorFunction -> "Topographic", PlotRange -> {0, pointMax + offset*1.2}, PlotStyle -> Specularity[White, 50], Lighting -> "Neutral", AxesLabel -> {"X", "Y", "Z (m)"}], Graphics3D[{lines3D, spheres3D}]], "Matrix" -> elevationMatrix|>] GetPeakList[matrix_, peakRadius_ : 5, minHeight_ : 3000] := Module[{dim, maxFiltered, positions, allFound}, dim = Dimensions[matrix];(*Find points that are the highest in their neighborhood*)maxFiltered = MaxFilter[matrix, peakRadius];positions = Position[matrix - maxFiltered, 0.];allFound = Table[<|"ID" -> i, "Pixel" -> {positions[[i, 2]], positions[[i, 1]]}, "Height" -> matrix[[positions[[i, 1]], positions[[i, 2]]]]|>, {i, Length[positions]}];(*Filter by height and sort tallest to shortest*)Select[allFound, #Height >= minHeight &] // SortBy[#Height &] // Reverse] CalculateSingleProminence[targetPeak_, allPeaks_, matrix_] := Module[{height, startPos, threshold, mask, label, result}, height = targetPeak["Height"];startPos = targetPeak["Pixel"];(*We use an iterative "Flood Fill" to see when this peak connects to a higher one*)result = Catch[Do[threshold = height - drop;mask = UnitStep[matrix - threshold];label = MorphologicalComponents[Image[mask]];(*If our peak's'island' now contains a point higher than our peak...*)If[Max[mask*UnitStep[matrix - (height + 1)]] > 0,(*Check if our specific peak is in the same component as a higher point*)If[label[[startPos[[2]], startPos[[1]]]] == label[[Position[matrix*mask, Max[matrix*mask]][[1, 1]], Position[matrix*mask, Max[matrix*mask]][[1, 2]]]], Throw[drop]]], {drop, 1, 2000, 10}]]; If[NumericQ[result], result, "Global Max or Out of Range"]] data = ProcessMountains[Entity["Mountain", "MountTimpanogos"], Quantity[10, "Kilometers"], 20, 2000];data["Map"]matrix = data["Matrix"] myPeaks = GetPeakList[matrix, 20, 2600];myPeaks // Dataset TableForm[myPeaks[[All, {"Height", "Pixel"}]], TableHeadings -> {Range[Length[myPeaks]], None}] target = myPeaks[[7]]; prom = CalculateSingleProminence[target, myPeaks, matrix];Print["Peak: ", target["Height"], "m"]Print["Calculated Prominence: ", prom, "m"]
+ProcessMountains[location_, 
+  radius_Quantity : Quantity[20, "Kilometers"], peakRadius_ : 8, 
+  minHeight_ : 3000] := 
+ Module[{geoData, elevationMatrix, dim, maxFiltered, positions, 
+   pointData, lines3D, spheres3D, pointMax, 
+   offset},(*1. Fetch Elevation Data*)
+  geoData = 
+   GeoElevationData[location, GeoRange -> radius, 
+    UnitSystem -> "Metric"];
+  (*2. Convert to Numerical Matrix& Fix Dimensionality (The Reverse \
+Fix)*)elevationMatrix = QuantityMagnitude[geoData];
+  If[ArrayDepth[elevationMatrix] > 2, 
+   elevationMatrix = First[elevationMatrix]];
+  elevationMatrix = Reverse[elevationMatrix];
+  (*3. Define Plotting Parameters*)dim = Dimensions[elevationMatrix];
+  pointMax = Max[elevationMatrix];
+  (*Needle height:15% of the total elevation range*)
+  offset = pointMax*0.15;
+  (*4. Spatial Filter Logic (MaxFilter)*)(*This finds points that are \
+the highest within a specific pixel radius*)
+  maxFiltered = MaxFilter[elevationMatrix, peakRadius];
+  (*Identify where the original height matches the filtered max \
+height*)positions = Position[elevationMatrix - maxFiltered, 0.];
+  (*5. Generate Marker Data with Height Thresholding*)
+  pointData = 
+   Table[Module[{h = elevationMatrix[[Sequence @@ pos]]}, 
+     If[h >= minHeight,(*Output:{Height,BasePoint,
+      TopPoint}*){h, {pos[[2]], pos[[1]], h}, {pos[[2]], pos[[1]], 
+        h + offset}}, Nothing]], {pos, positions}];
+  (*6. Create 3D Graphic Elements (Needles& Spheres)*)
+  lines3D = 
+   Table[{Thickness[0.003], Red, Line[{d[[2]], d[[3]]}]}, {d, 
+     pointData}];
+  spheres3D = 
+   Table[{Red, Sphere[d[[3]], Max[dim]/100]}, {d, pointData}];
+  (*7. Final Output Packaging*)<|
+   "Map" -> 
+    Show[ListPlot3D[elevationMatrix, Mesh -> None, 
+      ColorFunction -> "Topographic", 
+      PlotRange -> {0, pointMax + offset*1.2}, 
+      PlotStyle -> Specularity[White, 50], Lighting -> "Neutral", 
+      AxesLabel -> {"X", "Y", "Z (m)"}], 
+     Graphics3D[{lines3D, spheres3D}]], "Matrix" -> elevationMatrix|>]
+
+     GetPeakList[matrix_, peakRadius_ : 5, minHeight_ : 3000] := 
+ Module[{dim, maxFiltered, positions, allFound}, 
+  dim = Dimensions[matrix];
+  (*Find points that are the highest in their neighborhood*)
+  maxFiltered = MaxFilter[matrix, peakRadius];
+  positions = Position[matrix - maxFiltered, 0.];
+  allFound = 
+   Table[<|"ID" -> i, 
+     "Pixel" -> {positions[[i, 2]], positions[[i, 1]]}, 
+     "Height" -> matrix[[positions[[i, 1]], positions[[i, 2]]]]|>, {i,
+      Length[positions]}];
+  (*Filter by height and sort tallest to shortest*)
+  Select[allFound, #Height >= minHeight &] // SortBy[#Height &] // 
+   Reverse]
+
+   CalculateSingleProminence[targetPeak_, allPeaks_, matrix_] := 
+ Module[{height, startPos, threshold, mask, label, result}, 
+  height = targetPeak["Height"];
+  startPos = targetPeak["Pixel"];
+  (*We use an iterative "Flood Fill" to see when this peak connects \
+to a higher one*)result = Catch[Do[threshold = height - drop;
+     mask = UnitStep[matrix - threshold];
+     label = MorphologicalComponents[Image[mask]];
+     (*If our peak's'island' now contains a point higher than our \
+peak...*)If[
+      Max[mask*UnitStep[matrix - (height + 1)]] > 
+       0,(*Check if our specific peak is in the same component as a \
+higher point*)
+      If[label[[startPos[[2]], startPos[[1]]]] == 
+        label[[Position[matrix*mask, Max[matrix*mask]][[1, 1]], 
+         Position[matrix*mask, Max[matrix*mask]][[1, 2]]]], 
+       Throw[drop]]], {drop, 1, 2000, 10}]]; 
+  If[NumericQ[result], result, "Global Max or Out of Range"]]
+
+  data = ProcessMountains[Entity["Mountain", "MountTimpanogos"], 
+   Quantity[10, "Kilometers"], 20, 2000];
+data["Map"]
+matrix = data["Matrix"]
+
+myPeaks = GetPeakList[matrix, 20, 2600];
+myPeaks // Dataset
+
+TableForm[myPeaks[[All, {"Height", "Pixel"}]], 
+ TableHeadings -> {Range[Length[myPeaks]], None}]
+
+ target = myPeaks[[7]]; 
+
+prom = CalculateSingleProminence[target, myPeaks, matrix];
+
+Print["Peak: ", target["Height"], "m"]
+Print["Calculated Prominence: ", prom, "m"]
